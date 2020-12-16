@@ -1,0 +1,21 @@
+DROP TABLE
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 's1' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+CREATE TABLE
+2021-01-05 18:39:57|INFO|gpload session started 2021-01-05 18:39:57
+2021-01-05 18:39:57|INFO|setting schema 'public' for table 'mapping_test'
+2021-01-05 18:39:57|INFO|started gpfdist -p 8081 -P 8082 -f "/home/cc/repo/gpdb/gpMgmt/bin/gpload_test/gpload2/data/column_mapping_01.txt" -t 30
+2021-01-05 18:39:57|INFO|did not find an external table to reuse. creating ext_gpload_reusable_5af2c62c_4f42_11eb_a20c_7085c2381836
+2021-01-05 18:39:57|ERROR|ERROR:  column "n3" does not exist
+LINE 1: ...blic."mapping_test" ("s1","s2","s3") SELECT c1,c2,n3 FROM ex...
+                                                             ^
+HINT:  Perhaps you meant to reference the column "ext_gpload_reusable_b78990cc_4f07_11eb_8881_7085c2381836.c3" or the column "mapping_test.s3".
+ encountered while running INSERT INTO public."mapping_test" ("s1","s2","s3") SELECT c1,c2,n3 FROM ext_gpload_reusable_b78990cc_4f07_11eb_8881_7085c2381836
+2021-01-05 11:56:25|INFO|rows Inserted          = 0
+2021-01-05 11:56:25|INFO|rows Updated           = 0
+2021-01-05 11:56:25|INFO|data formatting errors = 0
+2021-01-05 11:56:25|INFO|gpload failed
+ s1 | s2 | s3 | s4 
+----+----+----+----
+(0 rows)
+

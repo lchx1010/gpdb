@@ -11,6 +11,7 @@ import platform
 import re
 #import yaml
 import pytest
+import tempfile
 
 try:
     import subprocess32 as subprocess
@@ -427,13 +428,15 @@ def get_table_name():
     except Exception as e:
         errorMessage = str(e)
         print ('could not connect to database: ' + errorMessage)
-    queryString = """SELECT relname
-                     from pg_class
-                     WHERE relname
-                     like 'ext_gpload_reusable%'
-                     OR relname
-                     like 'staging_gpload_reusable%';"""
+    queryString = """SELECT sch.table_schema, cls.relname
+                     FROM pg_class AS cls, information_schema.tables AS sch
+                     WHERE
+                     (cls.relname LIKE 'ext_gpload_reusable%'
+                     OR
+                     relname LIKE 'staging_gpload_reusable%')
+                     AND cls.relname=sch.table_name;"""
     resultList = db.query(queryString.encode('utf-8')).getresult()
+    print(resultList)
     return resultList
 
 def drop_tables():
@@ -449,14 +452,15 @@ def drop_tables():
 
     tableList = get_table_name()
     for i in tableList:
-        name = i[0]
+        schema = i[0]
+        name = i[1]
         match = re.search('ext_gpload',name)
         if match:
-            queryString = "DROP EXTERNAL TABLE %s;" % name
+            queryString = f'DROP EXTERNAL TABLE "{schema}"."{name}";'
             db.query(queryString.encode('utf-8'))
 
         else:
-            queryString = "DROP TABLE %s;" % name
+            queryString = f'DROP TABLE "{schema}"."{name}";'
             db.query(queryString.encode('utf-8'))
 
 class PSQLError(Exception):
@@ -508,6 +512,7 @@ def doTest(num):
     runfile(file)
     check_result(file,num=num)
 
+
 def write_test_file(num,cmd='',times=2):
     """
     initialize specific query#.sql for test case n
@@ -531,6 +536,24 @@ def prepare_before_test(num,cmd='',times=2):
         def wrapped_function(*args, **kwargs):
             write_test_file(num,cmd,times)
             retval= func(*args, **kwargs)
+            doTest(num)
+            return retval
+        return wrapped_function
+    return prepare_decorator
+
+
+def prepare_before_test_2(num):
+    """ Similar to the prepare_before_test function, but this won't write to
+        the test sql file. This gives more freedom to the test case to handle
+        the test sql file.
+    """
+    def prepare_decorator(func):
+        @wraps(func)
+        def wrapped_function(*args, **kwargs):
+            # Clear the file
+            f = open(mkpath('query%d.sql' % num), 'w')
+            f.close()
+            retval = func(*args, **kwargs)
             doTest(num)
             return retval
         return wrapped_function
@@ -580,6 +603,7 @@ def test_06_gpload_formatOpts_delimiter():
     "6  gpload formatOpts delimiter \"'\" with reuse"
     copy_data('external_file_03.txt','data_file.txt')
     write_config_file(reuse_tables=True,format='text',file='data_file.txt',table='texttable',delimiter="\"'\"")
+
 
 @prepare_before_test(num=7)
 def test_07_gpload_reuse_table_insert_mode_without_reuse():
@@ -1046,3 +1070,659 @@ def test_59_gpload_yaml_wrong_port():
     copy_data('external_file_01.txt','data_file.txt')
     write_config_file(port='111111',format='text',file='data_file.txt',table='texttable')
 
+
+def append_raw_sql(test_num, sql):
+    f = open(mkpath(f'query{test_num}.sql'), 'a')
+    f.write(f"{sql};\n")
+    f.close()
+
+
+def append_sql(test_num, sql):
+    f = open(mkpath(f'query{test_num}.sql'), 'a')
+    f.write(f"\\! psql -d reuse_gptest -c \"{sql};\"\n")
+    f.close()
+
+
+def apped_gpload_cmd(test_num, config_path):
+    f = open(mkpath(f'query{test_num}.sql'), 'a')
+    f.write(f"\\! gpload -f {config_path}\n")
+    f.close()
+
+
+@prepare_before_test(num=401, times=1)
+def test_401_gpload_yaml_existing_external_schema():
+    "401 test gpload works with an existing external schema"
+    drop_tables()
+    schema = "ext_schema_test"
+    psql_run(cmd=f'CREATE SCHEMA IF NOT EXISTS {schema};',
+             dbname='reuse_gptest')
+    write_config_file(externalSchema=schema)
+
+
+@prepare_before_test(num=402, times=1)
+def test_402_gpload_yaml_non_existing_external_schema():
+    "402 test gpload reports error when external schema doesn't exist."
+    drop_tables()
+    schema = "non_ext_schema_test"
+    psql_run(cmd=f'DROP SCHEMA IF EXISTS {schema} CASCADE;',
+             dbname='reuse_gptest')
+    write_config_file(externalSchema=schema)
+
+
+@prepare_before_test(num=403, times=1)
+def test_403_gpload_yaml_percent_external_schema():
+    "403 test gpload works with percent sign(%) to use the table's schema"
+    schema = "table_schema_test"
+    psql_run(cmd=f'CREATE SCHEMA IF NOT EXISTS {schema};',
+             dbname='reuse_gptest')
+    query = f"""CREATE TABLE {schema}.texttable (
+            s1 text, s2 text, s3 text, dt timestamp,
+            n1 smallint, n2 integer, n3 bigint, n4 decimal,
+            n5 numeric, n6 real, n7 double precision) DISTRIBUTED BY (n1);"""
+    psql_run(cmd=query, dbname='reuse_gptest')
+    write_config_file(table=f'{schema}.texttable', externalSchema='\'%\'')
+
+
+@prepare_before_test(num=404, times=1)
+def test_404_gpload_yaml_percent_default_external_schema():
+    "404 test gpload works with percent sign(%) to use the default table's\
+    schema"
+    drop_tables()
+    write_config_file(externalSchema='\'%\'')
+
+
+@prepare_before_test(num=430, times=1)
+def test_430_gpload_yaml_table_empty_string():
+    "430 test gpload reports error if table is an empty string"
+    write_config_file(table="")
+
+
+@prepare_before_test(num=431, times=1)
+def test_431_gpload_yaml_table_not_exist():
+    "431 test gpload reports error if the target table doesn't exist"
+    write_config_file(table="non_exist_table")
+
+
+@prepare_before_test(num=432, times=1)
+def test_432_gpload_yaml_table_schema_not_exist():
+    "432 test gpload reports error if the target schema doesn't exist"
+    write_config_file(table="non_exist_schema.table")
+
+
+@prepare_before_test(num=433, times=1)
+def test_433_gpload_yaml_table_with_schema():
+    "433 test gpload works with schame in the table string"
+    schema = "table_schema_test"
+    psql_run(cmd=f'CREATE SCHEMA IF NOT EXISTS {schema};',
+             dbname='reuse_gptest')
+    query = f"""DROP TABLE {schema}.texttable IF EXISTS;
+            CREATE TABLE {schema}.texttable (
+            s1 text, s2 text, s3 text, dt timestamp,
+            n1 smallint, n2 integer, n3 bigint, n4 decimal,
+            n5 numeric, n6 real, n7 double precision) DISTRIBUTED BY (n1);"""
+    psql_run(cmd=query, dbname='reuse_gptest')
+    write_config_file(table=f'{schema}.texttable')
+
+
+@prepare_before_test_2(num=440)
+def test_440_gpload_yaml_table_name_special_char():
+    "440 test gpload works with table name contains special chars"
+    test_num = 440
+    drop_tables()
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    # "char": ("escape_in_sql", "escape_in_yml")
+    spec_dict = {
+            "\\": ("s_\\_c", "s_\\_c"),
+            "$": ("s_$_c", "s_$_c"),
+            "#": ("s_#_c", "s_#_c"),
+            ",": ("s_,_c", "s_,_c"),
+            "(": ("s_(_c", "s_(_c"),
+            "\"": ("s_\"\"_c", "'\"s_\"\"_c\"'"),
+            ".": ("s_._c", "'\"s_._c\"'"),
+            "/": ("s_/_c", "s_/_c"),
+            # FIXME: Not working ones
+            #"'": ("s_'_c", "s_'_c"),
+            }
+
+    for c, escape in spec_dict.items():
+        table_name_sql = escape[0]
+        table_name_yml = escape[1]
+        append_raw_sql(test_num, f"DROP TABLE IF EXISTS \"{table_name_sql}\"")
+        append_raw_sql(
+                test_num,
+                f"""CREATE TABLE \"{table_name_sql}\"
+                (c1 text, c2 int) DISTRIBUTED BY (c1);""")
+        config_fd, config_path = tempfile.mkstemp()
+        write_config_file(
+                config=config_path,
+                table=table_name_yml,
+                update_columns="c2",
+                file="data/two_col_one_row.txt")
+        apped_gpload_cmd(test_num, config_path)
+
+
+@prepare_before_test_2(num=441)
+def test_441_gpload_yaml_schema_name_special_char():
+    "441 test gpload works with schema name contains special chars"
+    test_num = 441
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    # "char": ("escape_in_sql", "escape_in_yml")
+    spec_dict = {
+            "\\": ("s_\\_c", "s_\\_c"),
+            "$": ("s_$_c", "s_$_c"),
+            "#": ("s_#_c", "s_#_c"),
+            ",": ("s_,_c", "s_,_c"),
+            "(": ("s_(_c", "s_(_c"),
+            "\"": ("s_\"\"_c", "'\"s_\"\"_c\"'"),
+            ".": ("s_._c", "'\"s_._c\"'"),
+            "/": ("s_/_c", "s_/_c"),
+            # FIXME: Not working ones
+            #"'": ("s_'_c", "s_'_c"),
+            }
+
+    for c, escape in spec_dict.items():
+        name_sql = escape[0]
+        name_yml = escape[1]
+        append_raw_sql(
+                test_num, f"DROP SCHEMA IF EXISTS \"{name_sql}\" CASCADE;")
+        append_raw_sql(
+                test_num, f"CREATE SCHEMA \"{name_sql}\";")
+        append_raw_sql(
+                test_num,
+                f"""CREATE TABLE \"{name_sql}\"."test_table"
+                (c1 text, c2 int) DISTRIBUTED BY (c1);""")
+        config_fd, config_path = tempfile.mkstemp()
+        write_config_file(
+                config=config_path,
+                table=f"'\"{name_yml}\".\"test_table\"'",
+                update_columns="c2",
+                file="data/two_col_one_row.txt")
+        apped_gpload_cmd(test_num, config_path)
+
+
+@prepare_before_test_2(num=442)
+def test_442_gpload_yaml_external_schema_name_special_char():
+    "442 test gpload works with schema name contains special chars"
+    test_num = 442
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    # "char": ("escape_in_sql", "escape_in_yml")
+    spec_dict = {
+            "\\": ("s_\\_c", "s_\\_c"),
+            "$": ("s_$_c", "s_$_c"),
+            "#": ("s_#_c", "s_#_c"),
+            ",": ("s_,_c", "s_,_c"),
+            "(": ("s_(_c", "s_(_c"),
+            "\"": ("s_\"\"_c", "'\"s_\"\"_c\"'"),
+            ".": ("s_._c", "'\"s_._c\"'"),
+            "/": ("s_/_c", "s_/_c"),
+            # FIXME: Not working ones
+            #"'": ("s_'_c", "s_'_c"),
+            }
+
+    for c, escape in spec_dict.items():
+        name_sql = escape[0]
+        name_yml = escape[1]
+        append_raw_sql(
+                test_num, f"DROP SCHEMA IF EXISTS \"{name_sql}\" CASCADE;")
+        append_raw_sql(
+                test_num, f"CREATE SCHEMA \"{name_sql}\";")
+        append_raw_sql(
+                test_num,
+                """CREATE TABLE IF NOT EXISTS ext_schema_spec_char_test
+                (c1 text, c2 int) DISTRIBUTED BY (c1);""")
+        config_fd, config_path = tempfile.mkstemp()
+        write_config_file(
+                config=config_path,
+                externalSchema=f"'\"{name_yml}\"'",
+                table="ext_schema_spec_char_test",
+                update_columns="c2",
+                file="data/two_col_one_row.txt")
+        apped_gpload_cmd(test_num, config_path)
+
+
+@prepare_before_test(num=460, times=1)
+def test_460_gpload_mode_default():
+    "460 test gpload works in the default insert mode"
+    drop_tables()
+    ok, out = psql_run(cmd='TRUNCATE TABLE texttable', dbname='reuse_gptest')
+    write_config_file(mode="")
+    f = open(mkpath('query460.sql'), 'a')
+    f.write("\\! psql -d reuse_gptest -c 'select count(*) from texttable;'")
+    f.close()
+
+
+@prepare_before_test(num=461, times=1)
+def test_461_gpload_mode_insert():
+    "461 test gpload works in the insert mode"
+    drop_tables()
+    psql_run(cmd='TRUNCATE TABLE texttable', dbname='reuse_gptest')
+    write_config_file(mode='insert')
+    f = open(mkpath('query461.sql'), 'a')
+    f.write("\\! psql -d reuse_gptest -c 'select count(*) from texttable;'")
+    f.close()
+
+
+@prepare_before_test(num=490, times=1)
+def test_490_gpload_mode_update_error_no_columns_in_yaml():
+    "490 test gpload fails if UPDATE_COLUMNS is not specified in update mode"
+    write_config_file(mode='update', update_columns=[])
+
+
+@prepare_before_test(num=491, times=1)
+def test_491_gpload_mode_update_error_no_columns_matches():
+    "491 test gpload fails if UPDATE_COLUMNS doesn't match columns"
+    write_config_file(mode='update', update_columns=['no_exists_column'])
+
+
+@prepare_before_test(num=492, times=1)
+def test_492_gpload_mode_update_error_any_columns_not_match():
+    "492 test gpload fails if any of UPDATE_COLUMNS doesn't match columns"
+    write_config_file(mode='update', update_columns=['n2', 'no_exists_column'])
+
+
+def do_test_gpload_mode_update_one_match_column(
+        test_num, column, base, target):
+    append_sql(test_num, "TRUNCATE TABLE texttable;")
+    # Insert some base data first
+    config_fd, config_path = tempfile.mkstemp()
+    write_config_file(
+            mode='insert', config=config_path, file=base)
+    apped_gpload_cmd(test_num, config_path)
+
+    # Then do update
+    config_fd, config_path = tempfile.mkstemp()
+    write_config_file(
+            mode='update', config=config_path,
+            match_columns=[column], update_columns=['s3'],
+            file=target)
+    apped_gpload_cmd(test_num, config_path)
+    append_sql(test_num, "SELECT COUNT(*) FROM texttable WHERE s3 = '42'")
+
+
+@prepare_before_test_2(num=493)
+def test_493_gpload_mode_update_one_match_column():
+    "493 test gpload works if MATCH_COLUMNS has one matched column"
+    drop_tables()
+    base = 'data/column_match_01.txt'
+    target = 'data/column_match_target.txt'
+    # text column
+    do_test_gpload_mode_update_one_match_column(493, "s1", base, target)
+    # timestamp column
+    do_test_gpload_mode_update_one_match_column(493, "dt", base, target)
+    # integer column
+    do_test_gpload_mode_update_one_match_column(493, "n2", base, target)
+    # bigint column
+    do_test_gpload_mode_update_one_match_column(493, "n3", base, target)
+    # decimal column
+    do_test_gpload_mode_update_one_match_column(493, "n4", base, target)
+    # numeric column
+    do_test_gpload_mode_update_one_match_column(493, "n5", base, target)
+    # real column
+    do_test_gpload_mode_update_one_match_column(493, "n6", base, target)
+    # precision column
+    do_test_gpload_mode_update_one_match_column(493, "n7", base, target)
+
+
+@prepare_before_test_2(num=494)
+def test_494_gpload_mode_update_multiple_match_columns():
+    "494 test gpload works if MATCH_COLUMNS has multiple matched columns"
+    drop_tables()
+    append_sql(494, "TRUNCATE TABLE texttable;")
+    base = 'data/column_match_02.txt'
+    target = 'data/column_match_target.txt'
+    # Insert some base data first
+    config_fd, config_path = tempfile.mkstemp()
+    write_config_file( mode='insert', config=config_path, file=base)
+    apped_gpload_cmd(494, config_path)
+
+    # Then do update
+    config_fd, config_path = tempfile.mkstemp()
+    write_config_file(
+            mode='update', config=config_path,
+            match_columns=['s1', 's2'], update_columns=['s3'],
+            file=target)
+    apped_gpload_cmd(494, config_path)
+    append_sql(494, "SELECT COUNT(*) FROM texttable WHERE s3 = '42'")
+
+
+@prepare_before_test_2(num=495)
+def test_495_gpload_mode_update_multiple_update_columns():
+    "495 test gpload works if UPDATE_COLUMNS has multiple columns"
+    drop_tables()
+    append_sql(495, "TRUNCATE TABLE texttable;")
+    base = 'data/column_match_03.txt'
+    target = 'data/column_match_target.txt'
+    # Insert some base data first
+    config_fd, config_path = tempfile.mkstemp()
+    write_config_file(mode='insert', config=config_path, file=base)
+    apped_gpload_cmd(495, config_path)
+
+    # Then do update
+    config_fd, config_path = tempfile.mkstemp()
+    write_config_file(
+            mode='update', config=config_path,
+            match_columns=['s1'], update_columns=['s2', 's3'],
+            file=target)
+    apped_gpload_cmd(495, config_path)
+    append_sql(495, "SELECT * FROM texttable")
+
+
+@prepare_before_test_2(num=496)
+def test_496_gpload_mode_update_update_condition():
+    "496 test gpload works with UPDATE_CONDITION"
+    drop_tables()
+    append_sql(496, "TRUNCATE TABLE texttable;")
+    base = 'data/column_match_04.txt'
+    target = 'data/column_match_target.txt'
+    # Insert some base data first
+    config_fd, config_path = tempfile.mkstemp()
+    write_config_file(mode='insert', config=config_path, file=base)
+    apped_gpload_cmd(496, config_path)
+
+    # Then do update
+    config_fd, config_path = tempfile.mkstemp()
+    write_config_file(
+            mode='update', config=config_path,
+            match_columns=['s1'], update_columns=['s2', 's3'],
+            update_condition="n1 = 42",
+            file=target)
+    apped_gpload_cmd(496, config_path)
+    append_sql(496, "SELECT * FROM texttable")
+
+
+@prepare_before_test(num=497, times=1)
+def test_497_gpload_mode_udpate_wrong_update_conditino_reports_error():
+    "497 illegal update condition should report error"
+    write_config_file(mode='update', update_condition='non_col = 5')
+
+
+@prepare_before_test(num=499, times=1)
+def test_499_gpload_mode_update_error_match_column_cannot_be_dist_key():
+    "499 test gpload reports error if UPDATE_COLUMNS contains a dist key"
+    write_config_file(mode='update', update_columns=['n1'])
+
+
+@prepare_before_test(num=500, times=1)
+def test_500_gpload_mode_merge_same_as_insert_for_empty_table():
+    "500 test gpload works in merge mode and target table is empty"
+    drop_tables()
+    psql_run(cmd='TRUNCATE TABLE texttable', dbname='reuse_gptest')
+    write_config_file(mode='merge')
+    f = open(mkpath('query500.sql'), 'w')
+    f.write("\\! gpload -f " + mkpath('config/config_file') + "\n")
+    f.write("\\! psql -d reuse_gptest -c 'select count(*) from texttable;'")
+    f.close()
+
+
+@prepare_before_test(num=501, times=1)
+def test_501_gpload_mode_merge_same_data_twice():
+    "501 test gpload works in merge mode and load same data twice"
+    psql_run(cmd='TRUNCATE TABLE texttable', dbname='reuse_gptest')
+    write_config_file(mode='merge')
+    f = open(mkpath('query501.sql'), 'w')
+    f.write("\\! gpload -f " + mkpath('config/config_file') + "\n")
+    f.write("\\! gpload -f " + mkpath('config/config_file') + "\n")
+    f.write("\\! psql -d reuse_gptest -c 'select count(*) from texttable;'")
+    f.close()
+
+
+@prepare_before_test(num=502, times=1)
+def test_502_gpload_mode_merge_do_update_and_insert():
+    """502 test gpload works in merge mode and do update and insert at the same
+    time"""
+    drop_tables()
+    psql_run(cmd='TRUNCATE TABLE texttable', dbname='reuse_gptest')
+    write_config_file(mode='merge')
+    write_config_file(
+            mode='merge', config='config/config_file2',
+            file='data/external_file_502.txt', null_as='NUL')
+    f = open(mkpath('query502.sql'), 'w')
+    f.write("\\! gpload -f " + mkpath('config/config_file') + "\n")
+    f.write("\\! gpload -f " + mkpath('config/config_file2') + "\n")
+    f.write("\\! psql -d reuse_gptest -c 'select * from texttable order by s1, s2, n1;'")
+    f.close()
+
+
+@prepare_before_test(num=503, times=1)
+def test_503_gpload_mode_merge_do_update_and_insert_with_update_condition():
+    """502 test gpload works in merge mode and do update and insert at the
+    same time"""
+    psql_run(cmd='TRUNCATE TABLE texttable', dbname='reuse_gptest')
+    write_config_file(mode='merge')
+    write_config_file(
+            mode='merge', config='config/config_file2',
+            file='data/external_file_502.txt', null_as='NUL',
+            update_condition="s1 != 'ggg'")
+    f = open(mkpath('query503.sql'), 'w')
+    f.write("\\! gpload -f " + mkpath('config/config_file') + "\n")
+    f.write("\\! gpload -f " + mkpath('config/config_file2') + "\n")
+    f.write("\\! psql -d reuse_gptest -c 'select * from texttable order by s1, s2, n1;'")
+    f.close()
+
+
+def do_test_mapping(test_num, mapping):
+    drop_tables()
+    append_sql(test_num, "DROP TABLE IF EXISTS mapping_test")
+    append_sql(
+            test_num,
+            "CREATE TABLE mapping_test(s1 text, s2 text, s3 text, s4 int)")
+    write_config_file(
+            mode='insert',
+            columns={
+                'c1': 'text', 'c2': 'text', 'c3': 'text', 'c4': 'timestamp',
+                'c5': 'smallint', 'c6': 'integer', 'c7': 'bigint',
+                'c8': 'decimal', 'c9': 'numeric', 'c10': 'real',
+                'c11': 'double precision'},
+            mapping=mapping,
+            table='mapping_test',
+            file='data/column_mapping_01.txt')
+    apped_gpload_cmd(test_num, "config/config_file")
+    append_sql(test_num, "SELECT * FROM mapping_test")
+
+
+@prepare_before_test_2(num=520)
+def test_520_gpload_mode_insert_mapping():
+    "520 test gpload insert with mapping works."
+    mapping = {'s3': 'c1', 's2': 'c2', 's1': 'c3'}
+    do_test_mapping(520, mapping)
+
+
+@prepare_before_test_2(num=521)
+def test_521_gpload_mode_insert_mapping_target_not_exist():
+    """521 test gpload insert with mapping to a non-exists target column
+    reports error."""
+    mapping = {'n1': 'c1', 's2': 'c2', 's3': 'c3'}
+    do_test_mapping(521, mapping)
+
+
+@prepare_before_test_2(num=522)
+def test_522_gpload_mode_insert_mapping_source_not_exist():
+    """522 test gpload insert with mapping to a non-exists source column
+    reports error."""
+    mapping = {'s1': 'c1', 's2': 'c2', 's3': 'n3'}
+    do_test_mapping(522, mapping)
+
+
+@prepare_before_test_2(num=523)
+def test_523_gpload_mode_insert_mapping_type_not_match():
+    """523 test gpload insert with mismatched type mapping reports error."""
+    mapping = {'s4': 'c1', 's2': 'c2', 's3': 'c3'}
+    do_test_mapping(523, mapping)
+
+
+def do_test_mapping_update_merge(test_num, mapping, mode):
+    drop_tables()
+    append_sql(test_num, "DROP TABLE IF EXISTS mapping_test")
+    append_sql(
+            test_num,
+            "CREATE TABLE mapping_test(s1 text, s2 text, s3 text, s4 int)")
+    append_sql(
+            test_num,
+            "INSERT INTO mapping_test VALUES ('aaa', '', '', 0)")
+    write_config_file(
+            mode=mode,
+            columns={
+                'c1': 'text', 'c2': 'text', 'c3': 'text', 'c4': 'timestamp',
+                'c5': 'smallint', 'c6': 'integer', 'c7': 'bigint',
+                'c8': 'decimal', 'c9': 'numeric', 'c10': 'real',
+                'c11': 'double precision'},
+            mapping=mapping,
+            table='mapping_test',
+            file='data/column_mapping_01.txt',
+            match_columns=['s1'],
+            update_columns=['s2', 's3'])
+    apped_gpload_cmd(test_num, "config/config_file")
+    append_sql(test_num, "SELECT * FROM mapping_test")
+
+
+@prepare_before_test_2(num=530)
+def test_530_gpload_mode_update_mapping():
+    "530 test gpload insert with mapping works."
+    mapping = {'s1': 'c1', 's2': 'c3', 's3': 'c2'}
+    do_test_mapping_update_merge(530, mapping, 'update')
+
+
+@prepare_before_test_2(num=531)
+def test_531_gpload_mode_merge_mapping():
+    "531 test gpload insert with mapping works."
+    mapping = {'s1': 'c1', 's2': 'c3', 's3': 'c2'}
+    do_test_mapping_update_merge(531, mapping, 'merge')
+
+
+@prepare_before_test_2(num=532)
+def test_532_gpload_mode_update_mapping_mismatch_type():
+    "532 test gpload insert with mapping works."
+    mapping = {'s1': 'c1', 's2': 'c3', 's4': 'c2'}
+    do_test_mapping_update_merge(532, mapping, 'update')
+
+
+@prepare_before_test_2(num=533)
+def test_533_gpload_mode_merge_mapping_mismatch_type():
+    "533 test gpload merge with mapping works."
+    mapping = {'s1': 'c1', 's2': 'c3', 's4': 'c2'}
+    do_test_mapping_update_merge(533, mapping, 'update')
+
+
+@prepare_before_test_2(num=540)
+def test_540_gpload_yaml_update_column_special_char():
+    "540 test gpload works with table name contains special chars"
+    drop_tables()
+    test_num = 540
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    # "char": ("escape_in_sql", "escape_in_yml")
+    spec_dict = {
+            "\\": ("s_\\_c", "s_\\_c"),
+            "$": ("s_$_c", "s_$_c"),
+            "#": ("s_#_c", "s_#_c"),
+            ",": ("s_,_c", "s_,_c"),
+            "(": ("s_(_c", "s_(_c"),
+            ".": ("s_._c", "'\"s_._c\"'"),
+            "/": ("s_/_c", "s_/_c"),
+            "'": ("s_'_c", "s_'_c"),
+            # FIXME: Not working ones
+            #"\"": ("s_\"\"_c", "'\"s_\\\\\"_c\"'"),
+            }
+
+    for c, escape in spec_dict.items():
+        name_sql = escape[0]
+        name_yml = escape[1]
+        append_raw_sql(
+                test_num, "DROP TABLE IF EXISTS update_column_special_char")
+        append_raw_sql(
+                test_num,
+                f"""CREATE TABLE update_column_special_char
+                (c1 text, "{name_sql}" int) DISTRIBUTED BY (c1);""")
+        append_raw_sql(
+                test_num,
+                "INSERT INTO update_column_special_char VALUES('a', 0)")
+        config_fd, config_path = tempfile.mkstemp()
+        write_config_file(
+                mode="update",
+                config=config_path,
+                table="update_column_special_char",
+                match_columns=["c1"],
+                update_columns=[name_yml],
+                file="data/two_col_one_row.txt")
+        apped_gpload_cmd(test_num, config_path)
+
+
+@prepare_before_test_2(num=541)
+def test_541_gpload_yaml_match_column_special_char():
+    "541 test gpload works with table name contains special chars"
+    test_num = 541
+    drop_tables()
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    # "char": ("escape_in_sql", "escape_in_yml")
+    spec_dict = {
+            "\\": ("s_\\_c", "s_\\_c"),
+            "$": ("s_$_c", "s_$_c"),
+            "#": ("s_#_c", "s_#_c"),
+            ",": ("s_,_c", "s_,_c"),
+            "(": ("s_(_c", "s_(_c"),
+            ".": ("s_._c", "'\"s_._c\"'"),
+            "/": ("s_/_c", "s_/_c"),
+            "'": ("s_'_c", "s_'_c"),
+            # FIXME: Not working ones
+            #"\"": ("s_\"\"_c", "'\"s_\\\\\"_c\"'"),
+            }
+
+    for c, escape in spec_dict.items():
+        name_sql = escape[0]
+        name_yml = escape[1]
+        append_raw_sql(
+                test_num, "DROP TABLE IF EXISTS match_column_special_char")
+        append_raw_sql(
+                test_num,
+                f"""CREATE TABLE match_column_special_char
+                ("{name_sql}" text, c2 int) DISTRIBUTED BY ("{name_sql}");""")
+        append_raw_sql(
+                test_num,
+                "INSERT INTO match_column_special_char VALUES('a', 0)")
+        config_fd, config_path = tempfile.mkstemp()
+        write_config_file(
+                mode="update",
+                config=config_path,
+                table="match_column_special_char",
+                match_columns=[f"{name_yml}"],
+                update_columns=["c2"],
+                file="data/two_col_one_row.txt")
+        apped_gpload_cmd(test_num, config_path)
+
+
+@prepare_before_test_2(num=542)
+def test_542_gpload_yaml_mapping_target_special_char():
+    "541 test gpload works with table name contains special chars"
+    test_num = 542
+    drop_tables()
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    # "char": ("escape_in_sql", "escape_in_yml")
+    spec_dict = {
+            "\\": ("s_\\_c", "s_\\_c"),
+            "$": ("s_$_c", "s_$_c"),
+            "#": ("s_#_c", "s_#_c"),
+            ",": ("s_,_c", "s_,_c"),
+            "(": ("s_(_c", "s_(_c"),
+            ".": ("s_._c", "'\"s_._c\"'"),
+            "/": ("s_/_c", "s_/_c"),
+            "'": ("s_'_c", "s_'_c"),
+            # FIXME: Not working ones
+            #"\"": ("s_\"\"_c", "'\"s_\\\\\"_c\"'"),
+            }
+
+    for c, escape in spec_dict.items():
+        name_sql = escape[0]
+        name_yml = escape[1]
+        append_raw_sql(
+                test_num, "DROP TABLE IF EXISTS match_column_special_char")
+        append_raw_sql(
+                test_num,
+                f"""CREATE TABLE match_column_special_char
+                ("{name_sql}" text, c2 int) DISTRIBUTED BY ("c2");""")
+        config_fd, config_path = tempfile.mkstemp()
+        write_config_file(
+                columns={'c1': 'text', 'c2': 'integer'},
+                mapping={f"{name_yml}": 'c1'},
+                config=config_path,
+                table="match_column_special_char",
+                file="data/two_col_one_row.txt")
+        apped_gpload_cmd(test_num, config_path)

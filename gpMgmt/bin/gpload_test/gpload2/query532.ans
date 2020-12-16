@@ -1,0 +1,26 @@
+DROP TABLE
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 's1' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+CREATE TABLE
+INSERT 0 1
+NOTICE:  Table doesn't have 'DISTRIBUTED BY' clause -- Using column named 's1' as the Greenplum Database data distribution key for this table.
+HINT:  The 'DISTRIBUTED BY' clause determines the distribution of data. Make sure column(s) chosen are the optimal data distribution key to minimize skew.
+2021-01-05 18:35:16|INFO|gpload session started 2021-01-05 18:35:16
+2021-01-05 18:35:16|INFO|setting schema 'public' for table 'mapping_test'
+2021-01-05 18:35:16|INFO|started gpfdist -p 8081 -P 8082 -f "/home/cc/repo/gpdb/gpMgmt/bin/gpload_test/gpload2/data/column_mapping_01.txt" -t 30
+2021-01-05 18:35:16|INFO|did not find a staging table to reuse. creating staging_gpload_reusable_edcb757d70ae1c70cdd2f7d15496f54b
+2021-01-05 18:35:16|INFO|did not find an external table to reuse. creating ext_gpload_reusable_b378dc9c_4f41_11eb_bbe5_7085c2381836
+2021-01-05 18:35:16|ERROR|ERROR:  column "s4" is of type integer but expression is of type text
+LINE 1: ...c70cdd2f7d15496f54b ("s1","s2","s4") SELECT c1,c3,c2 FROM ex...
+                                                             ^
+HINT:  You will need to rewrite or cast the expression.
+ encountered while running INSERT INTO staging_gpload_reusable_edcb757d70ae1c70cdd2f7d15496f54b ("s1","s2","s4") SELECT c1,c3,c2 FROM ext_gpload_reusable_b78990cc_4f07_11eb_8881_7085c2381836
+2021-01-05 14:15:08|INFO|rows Inserted          = 0
+2021-01-05 14:15:08|INFO|rows Updated           = 0
+2021-01-05 14:15:08|INFO|data formatting errors = 0
+2021-01-05 14:15:08|INFO|gpload failed
+ s1  | s2 | s3 | s4 
+-----+----+----+----
+ aaa |    |    |  0
+(1 row)
+
