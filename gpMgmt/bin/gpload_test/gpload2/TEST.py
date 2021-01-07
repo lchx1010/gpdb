@@ -1609,11 +1609,13 @@ def test_529_gpload_mode_insert_mapping_expression_no_exists_udf():
 
 def do_test_mapping_update_merge(test_num, mapping, mode):
     drop_tables()
-    append_sql(test_num, "DROP TABLE IF EXISTS mapping_test")
-    append_sql(
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    append_raw_sql(test_num, "DROP TABLE IF EXISTS mapping_test")
+    append_raw_sql(
             test_num,
-            "CREATE TABLE mapping_test(s1 text, s2 text, s3 text, s4 int)")
-    append_sql(
+            "CREATE TABLE mapping_test(s1 text, s2 text, s3 text, s4 int) "
+            "DISTRIBUTED BY(s1)")
+    append_raw_sql(
             test_num,
             "INSERT INTO mapping_test VALUES ('aaa', '', '', 0)")
     write_config_file(
@@ -1629,7 +1631,7 @@ def do_test_mapping_update_merge(test_num, mapping, mode):
             match_columns=['s1'],
             update_columns=['s2', 's3'])
     append_gpload_cmd(test_num, "config/config_file")
-    append_sql(test_num, "SELECT * FROM mapping_test")
+    append_raw_sql(test_num, "SELECT * FROM mapping_test")
 
 
 @prepare_before_test_2(num=530)
@@ -1641,7 +1643,7 @@ def test_530_gpload_mode_update_mapping():
 
 @prepare_before_test_2(num=531)
 def test_531_gpload_mode_merge_mapping():
-    "531 test gpload insert with mapping works."
+    "531 test gpload merge with mapping works."
     mapping = {'s1': 'c1', 's2': 'c3', 's3': 'c2'}
     do_test_mapping_update_merge(531, mapping, 'merge')
 
@@ -1658,6 +1660,13 @@ def test_533_gpload_mode_merge_mapping_mismatch_type():
     "533 test gpload merge with mapping works."
     mapping = {'s1': 'c1', 's2': 'c3', 's4': 'c2'}
     do_test_mapping_update_merge(533, mapping, 'update')
+
+
+@prepare_before_test_2(num=534)
+def test_534_gpload_mode_update_mapping_expression():
+    "534 test gpload update with expression mapping works."
+    mapping = {'s1': 'c1', 's2': 'concat(c2, \'_\', c3)', 's3': '(42)'}
+    do_test_mapping_update_merge(534, mapping, 'update')
 
 
 @prepare_before_test_2(num=540)
