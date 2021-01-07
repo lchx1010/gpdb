@@ -25,7 +25,7 @@ function run_regression_gpcheckcloud() {
 }
 
 function setup_gpadmin_user() {
-	./gpdb_src/concourse/scripts/setup_gpadmin_user.bash "centos"
+	./gpdb_src/concourse/scripts/setup_gpadmin_user.bash
 }
 
 function _main() {

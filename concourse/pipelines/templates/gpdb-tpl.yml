@@ -300,7 +300,10 @@ groups:
 {% if "centos6" in os_types %}
   - icw_extensions_gpcloud_centos6
 {% endif %}
-{%endif %}
+{% if "photon3" in os_types %}
+  - icw_extensions_gpcloud_photon3
+{% endif %}
+{% endif %}
 
 
 {% if pipeline_configuration == "prod" %}
@@ -387,6 +390,10 @@ groups:
   jobs:
 {% if "centos6" in os_types %}
   - icw_extensions_gpcloud_centos6
+{% endif %}
+
+{% if "photon3" in os_types %}
+  - icw_extensions_gpcloud_photon3
 {% endif %}
 
 {% endif %}
@@ -3049,5 +3056,42 @@ jobs:
           gpcloud_access_key_id: ((gpcloud-access-key-id))
           gpcloud_secret_access_key: ((gpcloud-secret-access-key))
           TARGET_OS: centos
+{% endif %}
+{% if 'photon3' in os_types%}
+- name: icw_extensions_gpcloud_photon3
+  plan:
+  - in_parallel:
+      steps:
+      - get: gpdb_src
+        passed: [compile_gpdb_photon3]
+        trigger: [[ test_trigger ]]
+      - get: bin_gpdb_photon3
+        passed: [compile_gpdb_photon3]
+      - get: gpdb6-photon3-test
+  - in_parallel:
+      steps:
+      - task: unit_tests_gpcloud
+        file: gpdb_src/concourse/tasks/unit_tests_gpcloud_photon3.yml
+        image: gpdb6-photon3-test
+        params:
+          TARGET_OS: photon
+      - task: regression_tests_gpcloud_photon
+        input_mapping:
+          bin_gpdb: bin_gpdb_photon3
+        file: gpdb_src/concourse/tasks/regression_tests_gpcloud_photon3.yml
+        image: gpdb6-photon3-test
+        params:
+          gpcloud_access_key_id: ((gpcloud-access-key-id))
+          gpcloud_secret_access_key: ((gpcloud-secret-access-key))
+          TARGET_OS: photon
+      - task: gpcheckcloud_tests_gpcloud_photon
+        input_mapping:
+          bin_gpdb: bin_gpdb_photon3
+        file: gpdb_src/concourse/tasks/gpcheckcloud_tests_gpcloud_photon3.yml
+        image: gpdb6-photon3-test
+        params:
+          gpcloud_access_key_id: ((gpcloud-access-key-id))
+          gpcloud_secret_access_key: ((gpcloud-secret-access-key))
+          TARGET_OS: photon
 {% endif %}
 {% endif %}
