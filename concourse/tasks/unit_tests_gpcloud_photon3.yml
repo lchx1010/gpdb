@@ -1,0 +1,12 @@
+--- 
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: pivotaldata/gpdb6-photon3-test
+    tag: gpdb6-latest
+inputs:
+  - name: gpdb_src
+run:
+  path: gpdb_src/concourse/scripts/unit_tests_gpcloud.bash
