@@ -277,8 +277,10 @@ groups:
 {% for test in CLI_BEHAVE_TESTS %}
   - [[ test.name ]]
   - [[ test.name ]]_ubuntu18
+  - [[ test.name ]]_photon3
 {% endfor %}
   - check_centos
+  - check_photon
 {% endif %}
 {% if "AA" in test_sections %}
   ## --------------------------------------------------------------------
@@ -454,9 +456,12 @@ groups:
 {% for test in CLI_BEHAVE_TESTS %}
   - [[ test.name ]]
   - [[ test.name ]]_ubuntu18
+  - [[ test.name ]]_photon3
 {% endfor %}
   - check_centos
   - compile_gpdb_centos6
+  - check_photon
+  - compile_gpdb_photon3
 {% if "centos6" in os_types and "ICW" in test_sections %}
   - gpexpand
   - pg_upgrade
@@ -2208,10 +2213,14 @@ jobs:
       - get: gpdb_src
         passed:
         - compile_gpdb_centos6
+        - compile_gpdb_photon3
         trigger: true
       - get: bin_gpdb_centos6
         passed:
         - compile_gpdb_centos6
+      - get: bin_gpdb_photon3
+        passed:
+        - compile_gpdb_photon3
 
 - name: check_centos
   plan:
@@ -2229,6 +2238,23 @@ jobs:
     image: gpdb6-centos6-test
     params:
       TEST_OS: centos
+
+- name: check_photon
+  plan:
+  - in_parallel:
+      steps:
+      - get: gpdb_src
+        passed: [gate_cli_start]
+      - get: bin_gpdb
+        resource: bin_gpdb_photon3
+        passed: [gate_cli_start]
+        trigger: [[ test_trigger ]]
+      - get: gpdb6-photon3-test
+  - task: check_photon
+    file: gpdb_src/concourse/tasks/gpMgmt_check_gpdb.yml
+    image: gpdb6-photon3-test
+    params:
+      TEST_OS: photon
 
 {% for test in CLI_BEHAVE_TESTS %}
 - name: [[ test.name ]]
@@ -2346,6 +2372,61 @@ jobs:
               BEHAVE_FLAGS: --tags=[[ test.name ]] --tags=~concourse_cluster,demo_cluster
               [[ test.env ]]
 
+- name: [[ test.name ]]_photon3
+  plan:
+    - in_parallel:
+        steps:
+        - get: gpdb_src
+          params:
+            submodules:
+              - gpMgmt/bin/pythonSrc/ext
+          passed: [gate_cli_start]
+        - get: gpdb6-photon3-test
+    - in_parallel:
+        steps:
+      {% if test.use_concourse_cluster %}
+        - do:
+          - get: gpdb_binary
+            resource: bin_gpdb_photon3
+            passed: [gate_cli_start]
+            trigger: [[ test_trigger ]]
+          - get: ccp_src
+          - get: ccp-image
+          - put: terraform
+            params:
+              <<: *ccp_default_params
+              vars:
+                <<: *ccp_default_vars
+                instance_type: n1-standard-2
+                [[ test.additional_ccp_vars ]]
+          - task: gen_cluster
+            file: ccp_src/ci/tasks/gen_cluster.yml
+            params:
+              <<: *ccp_gen_cluster_default_params
+          - task: gpinitsystem
+            file: ccp_src/ci/tasks/gpinitsystem.yml
+          - task: [[ test.name ]]_concourse_cluster_tests
+            file: gpdb_src/concourse/tasks/run_behave_on_ccp_cluster.yml
+            image: ccp-image
+            params:
+              BEHAVE_FLAGS: --tags=[[ test.name ]] --tags=concourse_cluster
+              [[ test.env ]]
+            on_success:
+              <<: *ccp_destroy
+            ensure:
+              <<: *set_failed
+        {% endif %}
+        - do:
+          - get: bin_gpdb
+            resource: bin_gpdb_photon3
+            passed: [gate_cli_start]
+            trigger: [[ test_trigger ]]
+          - task: [[ test.name ]]_demo_cluster_tests
+            file: gpdb_src/concourse/tasks/behave_gpdb.yml
+            image: gpdb6-photon3-test
+            params:
+              BEHAVE_FLAGS: --tags=[[ test.name ]] --tags=~concourse_cluster,demo_cluster
+              [[ test.env ]]
 {% endfor %}
 
 - name: cli_cross_subnet
