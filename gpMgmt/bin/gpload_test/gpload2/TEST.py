@@ -1,4 +1,4 @@
-#!/usr/bin/env pytest
+#!/bin/env pytest
 
 import unittest
 import sys
@@ -1083,7 +1083,7 @@ def append_sql(test_num, sql):
     f.close()
 
 
-def apped_gpload_cmd(test_num, config_path):
+def append_gpload_cmd(test_num, config_path):
     f = open(mkpath(f'query{test_num}.sql'), 'a')
     f.write(f"\\! gpload -f {config_path}\n")
     f.close()
@@ -1198,7 +1198,7 @@ def test_440_gpload_yaml_table_name_special_char():
                 table=table_name_yml,
                 update_columns="c2",
                 file="data/two_col_one_row.txt")
-        apped_gpload_cmd(test_num, config_path)
+        append_gpload_cmd(test_num, config_path)
 
 
 @prepare_before_test_2(num=441)
@@ -1237,7 +1237,7 @@ def test_441_gpload_yaml_schema_name_special_char():
                 table=f"'\"{name_yml}\".\"test_table\"'",
                 update_columns="c2",
                 file="data/two_col_one_row.txt")
-        apped_gpload_cmd(test_num, config_path)
+        append_gpload_cmd(test_num, config_path)
 
 
 @prepare_before_test_2(num=442)
@@ -1277,7 +1277,7 @@ def test_442_gpload_yaml_external_schema_name_special_char():
                 table="ext_schema_spec_char_test",
                 update_columns="c2",
                 file="data/two_col_one_row.txt")
-        apped_gpload_cmd(test_num, config_path)
+        append_gpload_cmd(test_num, config_path)
 
 
 @prepare_before_test(num=460, times=1)
@@ -1327,7 +1327,7 @@ def do_test_gpload_mode_update_one_match_column(
     config_fd, config_path = tempfile.mkstemp()
     write_config_file(
             mode='insert', config=config_path, file=base)
-    apped_gpload_cmd(test_num, config_path)
+    append_gpload_cmd(test_num, config_path)
 
     # Then do update
     config_fd, config_path = tempfile.mkstemp()
@@ -1335,7 +1335,7 @@ def do_test_gpload_mode_update_one_match_column(
             mode='update', config=config_path,
             match_columns=[column], update_columns=['s3'],
             file=target)
-    apped_gpload_cmd(test_num, config_path)
+    append_gpload_cmd(test_num, config_path)
     append_sql(test_num, "SELECT COUNT(*) FROM texttable WHERE s3 = '42'")
 
 
@@ -1373,7 +1373,7 @@ def test_494_gpload_mode_update_multiple_match_columns():
     # Insert some base data first
     config_fd, config_path = tempfile.mkstemp()
     write_config_file( mode='insert', config=config_path, file=base)
-    apped_gpload_cmd(494, config_path)
+    append_gpload_cmd(494, config_path)
 
     # Then do update
     config_fd, config_path = tempfile.mkstemp()
@@ -1381,7 +1381,7 @@ def test_494_gpload_mode_update_multiple_match_columns():
             mode='update', config=config_path,
             match_columns=['s1', 's2'], update_columns=['s3'],
             file=target)
-    apped_gpload_cmd(494, config_path)
+    append_gpload_cmd(494, config_path)
     append_sql(494, "SELECT COUNT(*) FROM texttable WHERE s3 = '42'")
 
 
@@ -1395,7 +1395,7 @@ def test_495_gpload_mode_update_multiple_update_columns():
     # Insert some base data first
     config_fd, config_path = tempfile.mkstemp()
     write_config_file(mode='insert', config=config_path, file=base)
-    apped_gpload_cmd(495, config_path)
+    append_gpload_cmd(495, config_path)
 
     # Then do update
     config_fd, config_path = tempfile.mkstemp()
@@ -1403,7 +1403,7 @@ def test_495_gpload_mode_update_multiple_update_columns():
             mode='update', config=config_path,
             match_columns=['s1'], update_columns=['s2', 's3'],
             file=target)
-    apped_gpload_cmd(495, config_path)
+    append_gpload_cmd(495, config_path)
     append_sql(495, "SELECT * FROM texttable")
 
 
@@ -1417,7 +1417,7 @@ def test_496_gpload_mode_update_update_condition():
     # Insert some base data first
     config_fd, config_path = tempfile.mkstemp()
     write_config_file(mode='insert', config=config_path, file=base)
-    apped_gpload_cmd(496, config_path)
+    append_gpload_cmd(496, config_path)
 
     # Then do update
     config_fd, config_path = tempfile.mkstemp()
@@ -1426,7 +1426,7 @@ def test_496_gpload_mode_update_update_condition():
             match_columns=['s1'], update_columns=['s2', 's3'],
             update_condition="n1 = 42",
             file=target)
-    apped_gpload_cmd(496, config_path)
+    append_gpload_cmd(496, config_path)
     append_sql(496, "SELECT * FROM texttable")
 
 
@@ -1502,10 +1502,11 @@ def test_503_gpload_mode_merge_do_update_and_insert_with_update_condition():
 
 def do_test_mapping(test_num, mapping):
     drop_tables()
-    append_sql(test_num, "DROP TABLE IF EXISTS mapping_test")
-    append_sql(
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    append_raw_sql(test_num, "DROP TABLE IF EXISTS mapping_test")
+    append_raw_sql(
             test_num,
-            "CREATE TABLE mapping_test(s1 text, s2 text, s3 text, s4 int)")
+            "CREATE TABLE mapping_test(s1 text, s2 text, s3 text, s4 int) DISTRIBUTED BY (s1)")
     write_config_file(
             mode='insert',
             columns={
@@ -1516,8 +1517,8 @@ def do_test_mapping(test_num, mapping):
             mapping=mapping,
             table='mapping_test',
             file='data/column_mapping_01.txt')
-    apped_gpload_cmd(test_num, "config/config_file")
-    append_sql(test_num, "SELECT * FROM mapping_test")
+    append_gpload_cmd(test_num, "config/config_file")
+    append_raw_sql(test_num, "SELECT * FROM mapping_test")
 
 
 @prepare_before_test_2(num=520)
@@ -1550,6 +1551,62 @@ def test_523_gpload_mode_insert_mapping_type_not_match():
     do_test_mapping(523, mapping)
 
 
+@prepare_before_test_2(num=524)
+def test_524_gpload_mode_insert_mapping_expression_function_multi_col():
+    """524 test gpload insert simple function expression mapping with multiple
+    source target columns as input argments."""
+    mapping = {'s1': 'concat(c1, \'_\', c2)'}
+    do_test_mapping(524, mapping)
+
+
+@prepare_before_test_2(num=525)
+def test_525_gpload_mode_insert_mapping_expression_constant():
+    """525 test gpload insert function expression mapping"""
+    mapping = {'s1': '"\'const_str\'"'}
+    do_test_mapping(525, mapping)
+
+
+@prepare_before_test_2(num=526)
+def test_526_gpload_mode_insert_mapping_expression_operator():
+    """526 test gpload insert operator expression mapping"""
+    mapping = {'s1': 'c1 = \'aaa\''}
+    do_test_mapping(526, mapping)
+
+
+@prepare_before_test_2(num=527)
+def test_527_gpload_mode_insert_mapping_udf_expression_operator():
+    """527 test gpload insert UDF expression mapping"""
+    append_raw_sql(527, "\\c reuse_gptest")
+    append_raw_sql(527, """
+        CREATE OR REPLACE FUNCTION increment_527(i integer)
+        RETURNS integer AS $$
+        BEGIN
+                RETURN i + 1;
+        END;
+        $$ LANGUAGE plpgsql""")
+    mapping = {'s1': 'increment_527(41)'}
+    do_test_mapping(527, mapping)
+
+
+@prepare_before_test_2(num=528)
+def test_528_gpload_mode_insert_mapping_expression_mixed():
+    """528 test gpload insert mapping mixed with column and different type of
+    expressions"""
+    mapping = {
+            's1': 'c1 = \'aaa\'',
+            's2': 'concat(c2, \'_postfix\')',
+            's3': 'c3',
+            's4': '(5)'}
+    do_test_mapping(528, mapping)
+
+
+@prepare_before_test_2(num=529)
+def test_529_gpload_mode_insert_mapping_expression_no_exists_udf():
+    """529 test gpload insert mapping UDF expression doesn't exist"""
+    mapping = {'s1': 'rocket_bites(\'frog\')'}
+    do_test_mapping(529, mapping)
+
+
 def do_test_mapping_update_merge(test_num, mapping, mode):
     drop_tables()
     append_sql(test_num, "DROP TABLE IF EXISTS mapping_test")
@@ -1571,7 +1628,7 @@ def do_test_mapping_update_merge(test_num, mapping, mode):
             file='data/column_mapping_01.txt',
             match_columns=['s1'],
             update_columns=['s2', 's3'])
-    apped_gpload_cmd(test_num, "config/config_file")
+    append_gpload_cmd(test_num, "config/config_file")
     append_sql(test_num, "SELECT * FROM mapping_test")
 
 
@@ -1643,7 +1700,7 @@ def test_540_gpload_yaml_update_column_special_char():
                 match_columns=["c1"],
                 update_columns=[name_yml],
                 file="data/two_col_one_row.txt")
-        apped_gpload_cmd(test_num, config_path)
+        append_gpload_cmd(test_num, config_path)
 
 
 @prepare_before_test_2(num=541)
@@ -1686,7 +1743,7 @@ def test_541_gpload_yaml_match_column_special_char():
                 match_columns=[f"{name_yml}"],
                 update_columns=["c2"],
                 file="data/two_col_one_row.txt")
-        apped_gpload_cmd(test_num, config_path)
+        append_gpload_cmd(test_num, config_path)
 
 
 @prepare_before_test_2(num=542)
@@ -1725,4 +1782,4 @@ def test_542_gpload_yaml_mapping_target_special_char():
                 config=config_path,
                 table="match_column_special_char",
                 file="data/two_col_one_row.txt")
-        apped_gpload_cmd(test_num, config_path)
+        append_gpload_cmd(test_num, config_path)
