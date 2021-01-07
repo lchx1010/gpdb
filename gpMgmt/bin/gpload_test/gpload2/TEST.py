@@ -1500,6 +1500,70 @@ def test_503_gpload_mode_merge_do_update_and_insert_with_update_condition():
     f.close()
 
 
+def do_test_merge(test_num, match_columns, update_columns):
+    drop_tables()
+    append_raw_sql(test_num, "\\c reuse_gptest")
+    append_raw_sql(test_num, "DROP TABLE IF EXISTS merge_test")
+    append_raw_sql(
+            test_num,
+            "CREATE TABLE merge_test(c1 text, c2 text, c3 text, c4 int) "
+            "DISTRIBUTED BY(c4)")
+    append_raw_sql(
+            test_num,
+            "INSERT INTO merge_test VALUES ('aaa', 'init', 'init', 0)")
+    write_config_file(
+            mode='merge',
+            columns={
+                'c1': 'text', 'c2': 'text', 'c3': 'text', 'c4': 'timestamp',
+                'c5': 'smallint', 'c6': 'integer', 'c7': 'bigint',
+                'c8': 'decimal', 'c9': 'numeric', 'c10': 'real',
+                'c11': 'double precision'},
+            table='merge_test',
+            file='data/column_mapping_01.txt',
+            match_columns=match_columns,
+            update_columns=update_columns,
+            mapping={'c1': 'c1', 'c2': 'c2', 'c3': 'c3', 'c4': 'c5'})
+    append_gpload_cmd(test_num, "config/config_file")
+    append_raw_sql(test_num, "SELECT * FROM merge_test")
+
+
+@prepare_before_test_2(num=504)
+def test_504_gpload_mode_merge_same_update_match_column():
+    """504 test gpload can use the same column in both UPDATE_COLUMNS and
+    MATCH_COLUMNS."""
+    do_test_merge(504, ['c1'], ['c1'])
+
+
+@prepare_before_test_2(num=505)
+def test_505_gpload_mode_merge_multiple_match_column_no_match():
+    "505 test merge mode multiple MATCH_COLUMNS don't match"
+    do_test_merge(505, ['c1', 'c2'], ['c1'])
+
+
+@prepare_before_test_2(num=506)
+def test_506_gpload_mode_merge_empty_match_column_reports_error():
+    "506 test merge mode empty MATCH_COLUMNS reports errors"
+    do_test_merge(506, [], ['c1'])
+
+
+@prepare_before_test_2(num=507)
+def test_507_gpload_mode_merge_empty_update_column_reports_error():
+    "507 test merge mode empty UPDATE_COLUMNS reports errors"
+    do_test_merge(507, ['c1'], [])
+
+
+@prepare_before_test_2(num=508)
+def test_508_gpload_mode_merge_no_exist_match_column_reports_error():
+    "508 test merge mode non-existing MATCH_COLUMNS reports errors"
+    do_test_merge(508, ['cannot_see_me'], ['c1'])
+
+
+@prepare_before_test_2(num=509)
+def test_509_gpload_mode_merge_no_exist_update_column_reports_error():
+    "509 test merge mode non-existing UPDATE_COLUMNS reports errors"
+    do_test_merge(509, ['c1'], ['cannot_see_me'])
+
+
 def do_test_mapping(test_num, mapping):
     drop_tables()
     append_raw_sql(test_num, "\\c reuse_gptest")
@@ -1659,7 +1723,7 @@ def test_532_gpload_mode_update_mapping_mismatch_type():
 def test_533_gpload_mode_merge_mapping_mismatch_type():
     "533 test gpload merge with mapping works."
     mapping = {'s1': 'c1', 's2': 'c3', 's4': 'c2'}
-    do_test_mapping_update_merge(533, mapping, 'update')
+    do_test_mapping_update_merge(533, mapping, 'merge')
 
 
 @prepare_before_test_2(num=534)
@@ -1667,6 +1731,13 @@ def test_534_gpload_mode_update_mapping_expression():
     "534 test gpload update with expression mapping works."
     mapping = {'s1': 'c1', 's2': 'concat(c2, \'_\', c3)', 's3': '(42)'}
     do_test_mapping_update_merge(534, mapping, 'update')
+
+
+@prepare_before_test_2(num=535)
+def test_535_gpload_mode_merge_mapping_expression():
+    "535 test gpload update with expression mapping works."
+    mapping = {'s1': 'c1', 's2': 'concat(c2, \'_\', c3)', 's3': '(42)'}
+    do_test_mapping_update_merge(535, mapping, 'merge')
 
 
 @prepare_before_test_2(num=540)
