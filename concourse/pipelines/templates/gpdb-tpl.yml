@@ -244,7 +244,12 @@ groups:
 {% endif %}
 {% if "Interconnect" in test_sections %}
   ## --------------------------------------------------------------------
+{% if "centos6" in test_sections %}
   - interconnect
+{% endif %}
+{% if "photon3" in test_sections %}
+  - interconnect_photon3
+{% endif %}
 {% endif %}
 {% if "ResourceGroups" in test_sections %}
   ## --------------------------------------------------------------------
@@ -387,12 +392,15 @@ groups:
 {% endif %}
 {% if "Interconnect" in test_sections %}
 ## ======================================================================
-
-{% if "centos6" in os_types %}
 - name: Interconnect
   jobs:
+{% if "centos6" in os_types %}
   - compile_gpdb_centos6
   - interconnect
+{% endif %}
+{% if "photon3" in os_types %}
+  - compile_gpdb_photon3
+  - interconnect_photon3
 {% endif %}
 
 {% endif %}
@@ -1909,7 +1917,26 @@ jobs:
         BUILD_TYPE=((rc-build-type)) -C src/test/regress installcheck-icudp
       TEST_OS: centos
 {% endif %}
-
+{% if "photon3" in os_types %}
+- name: interconnect_photon3
+  plan:
+  - in_parallel:
+      steps:
+      - get: gpdb_src
+        passed: [compile_gpdb_photon3]
+      - get: bin_gpdb
+        passed: [compile_gpdb_photon3]
+        resource: bin_gpdb_photon3
+        trigger: [[ test_trigger ]]
+      - get: gpdb6-photon3-test
+  - task: ic_gpdb
+    file: gpdb_src/concourse/tasks/ic_gpdb.yml
+    image: gpdb6-photon3-test
+    params:
+      MAKE_TEST_COMMAND: -k PGOPTIONS='-c optimizer=off'
+        BUILD_TYPE=((rc-build-type)) -C src/test/regress installcheck-icudp
+      TEST_OS: photon
+{% endif %}
 {% endif %}
 {% if "ResourceGroups" in test_sections %}
 ## ======================================================================
