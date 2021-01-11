@@ -9,7 +9,9 @@ function gen_env(){
 	cat > /home/gpadmin/run_regression_gpcheckcloud.sh <<-EOF
 	set -exo pipefail
 
-	source /opt/gcc_env.sh
+	if [ -f /opt/gcc_env.sh ]; then
+        source /opt/gcc_env.sh
+    fi
 	source /usr/local/greenplum-db-devel/greenplum_path.sh
 
 	cd "\${1}/gpdb_src/gpcontrib/gpcloud/regress"
