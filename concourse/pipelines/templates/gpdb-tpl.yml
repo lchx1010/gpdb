@@ -2279,11 +2279,13 @@ jobs:
               vars:
                 <<: *ccp_default_vars
                 instance_type: n1-standard-2
+                PLATFORM: photon3
                 [[ test.additional_ccp_vars ]]
           - task: gen_cluster
             file: ccp_src/ci/tasks/gen_cluster.yml
             params:
               <<: *ccp_gen_cluster_default_params
+              PLATFORM: photon3
           - task: gpinitsystem
             file: ccp_src/ci/tasks/gpinitsystem.yml
           - task: [[ test.name ]]_concourse_cluster_tests
