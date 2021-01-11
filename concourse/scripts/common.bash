@@ -99,6 +99,11 @@ function install_python_hacks() {
             echo 'WARNING: This is a known issue on SLES11.'
             set -x
         fi
+    elif which tdnf > /dev/null; then
+            set +x
+            echo 'WARNING: could not install patchelf; virtualenv may fail later'
+            echo 'WARNING: patchelf is not available on Photon.'
+            set -x
     elif which yum > /dev/null; then
         yum install -y patchelf
     elif which apt > /dev/null; then
