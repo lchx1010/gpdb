@@ -100,10 +100,9 @@ function install_python_hacks() {
             set -x
         fi
     elif which tdnf > /dev/null; then
-            set +x
-            echo 'WARNING: could not install patchelf; virtualenv may fail later'
-            echo 'WARNING: patchelf is not available on Photon.'
-            set -x
+        set +x
+        tdnf install -y chrpath
+        set -x
     elif which yum > /dev/null; then
         yum install -y patchelf
     elif which apt > /dev/null; then
@@ -136,8 +135,12 @@ function _install_python_requirements() {
 
         virtualenv \
             --python /usr/local/greenplum-db-devel/ext/python/bin/python /tmp/venv
+    elif which chrpath > /dev/null; then
+        chrpath \
+        -r /usr/local/greenplum-db-devel/ext/python/lib \
+        /usr/local/greenplum-db-devel/ext/python/bin/python
     else
-        # We don't have patchelf on this environment. The only workaround we
+        # We don't have patchelf or chrpath on this environment. The only workaround we
         # currently have is to set both PYTHONHOME and LD_LIBRARY_PATH and
         # pray that the resulting libpython collision doesn't break
         # something too badly.
