@@ -22,8 +22,22 @@ function gen_env(){
 	chmod a+x /home/gpadmin/run_regression_gpcheckcloud.sh
 }
 
-function run_regression_gpcheckcloud() {
-	su gpadmin -c "bash /home/gpadmin/run_regression_gpcheckcloud.sh $(pwd)"
+function set_limits() {
+    case "$PLATFORM" in
+		centos6)
+			sed -i s/1024/unlimited/ /etc/security/limits.d/90-nproc.conf
+			;;
+		centos7)
+			sed -i s/4096/unlimited/ /etc/security/limits.d/20-nproc.conf
+			;;
+		photon*)
+			mkdir -p /etc/security/limits.d
+			cat > /etc/security/limits.d/20-nproc.conf <<-EOF
+			*          soft    nproc     unlimited
+			root       soft    nproc     unlimited
+			EOF
+			;;
+	esac
 }
 
 function setup_gpadmin_user() {
@@ -31,9 +45,10 @@ function setup_gpadmin_user() {
 }
 
 function _main() {
+	local PLATFORM=$(determine_os)
 	time install_and_configure_gpdb
 	time setup_gpadmin_user
-	sed -i s/1024/unlimited/ /etc/security/limits.d/90-nproc.conf
+	time set_limits
 	time gen_env
 
 	time run_regression_gpcheckcloud
