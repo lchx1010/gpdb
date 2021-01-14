@@ -40,6 +40,10 @@ function set_limits() {
 	esac
 }
 
+function run_regression_gpcheckcloud() {
+	su gpadmin -c "bash /home/gpadmin/run_regression_gpcheckcloud.sh $(pwd)"
+}
+
 function setup_gpadmin_user() {
 	./gpdb_src/concourse/scripts/setup_gpadmin_user.bash
 }
